@@ -1094,7 +1094,8 @@ if envs.VLLM_SERVER_DEV_MODE:
     async def sleep(raw_request: Request):
         # get POST params
         level = raw_request.query_params.get("level", "1")
-        await engine_client(raw_request).sleep(int(level))
+        preserve_state = raw_request.query_params.get("preserve_state", "false").lower() == "true"
+        await engine_client(raw_request).sleep(int(level), preserve_state=preserve_state)
         # FIXME: in v0 with frontend multiprocessing, the sleep command
         # is sent but does not finish yet when we return a response.
         return Response(status_code=200)

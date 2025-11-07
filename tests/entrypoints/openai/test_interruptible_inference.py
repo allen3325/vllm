@@ -54,10 +54,10 @@ def test_interruptible_inference():
         result_before_sleep = response.json()
         first_completion = result_before_sleep["choices"][0]["text"]
 
-        # Step 2: Put engine to sleep (level 2 for full state save)
+        # Step 2: Put engine to sleep with state preservation
         response = requests.post(
             remote_server.url_for("sleep"),
-            params={"level": "2"},
+            params={"level": "2", "preserve_state": "true"},
         )
         assert response.status_code == 200
 

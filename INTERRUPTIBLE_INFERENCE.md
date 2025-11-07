@@ -4,16 +4,19 @@
 
 This document describes the interruptible inference implementation for vLLM, which enables the engine to safely enter sleep mode (even with active requests) and resume inference seamlessly upon waking up.
 
+**This feature is opt-in via the `preserve_state` parameter** - the original sleep/wake behavior is unchanged by default, ensuring full backward compatibility.
+
 ## Features
 
-1. **Safe Sleep Mode**: Preempts all running requests before entering sleep
-2. **State Preservation**: Saves complete request state including:
+1. **Opt-In Design**: Controlled by `preserve_state=True` parameter (default: `False`)
+2. **Safe Sleep Mode**: Preempts all running requests before entering sleep (only when `preserve_state=True`)
+3. **State Preservation**: Saves complete request state including:
    - Request objects (tokens, parameters, status)
    - KV cache block allocations
    - Prefix cache mappings
    - Scheduler queues (waiting, running)
-3. **Seamless Resumption**: Restores all state on wake-up and continues inference from where it left off
-4. **No Impact on Other Functions**: Fully backward compatible with existing vLLM functionality
+4. **Seamless Resumption**: Restores all state on wake-up and continues inference from where it left off
+5. **Full Backward Compatibility**: Original sleep/wake behavior unchanged when `preserve_state=False` (default)
 
 ## Architecture
 
@@ -79,7 +82,27 @@ This document describes the interruptible inference implementation for vLLM, whi
 
 ## Usage
 
-### Basic Sleep/Wake Cycle
+### Option 1: Original Sleep Behavior (Default)
+
+```python
+from vllm import LLM
+
+# Initialize engine with sleep mode enabled
+llm = LLM(
+    model="meta-llama/Llama-3.2-1B",
+    enable_sleep_mode=True,
+)
+
+# Original sleep (no state preservation)
+llm.sleep(level=1)  # Default: preserve_state=False
+
+# Wake up
+llm.wake_up()
+
+# Note: Active requests are NOT preserved (original behavior)
+```
+
+### Option 2: Interruptible Inference (Opt-In)
 
 ```python
 from vllm import LLM
@@ -93,8 +116,8 @@ llm = LLM(
 # Start some requests
 request_id = llm.add_request(...)
 
-# Enter sleep mode (level 1: offload weights only)
-llm.sleep(level=1)
+# Enter sleep mode WITH state preservation
+llm.sleep(level=2, preserve_state=True)  # 🔑 Key parameter
 
 # Check if sleeping
 assert llm.is_sleeping()
@@ -102,18 +125,15 @@ assert llm.is_sleeping()
 # Wake up and resume
 llm.wake_up()
 
-# Requests continue processing from where they left off
+# ✅ Requests continue processing from where they left off!
 ```
 
-### Advanced: Level 2 Sleep
+### Comparison: preserve_state Parameter
 
-```python
-# Level 2 sleep: offload weights + save model buffers
-llm.sleep(level=2)
-
-# Wake up (automatically restores buffers)
-llm.wake_up()
-```
+| Parameter | Behavior |
+|-----------|----------|
+| `preserve_state=False` (default) | Original sleep/wake - memory offload only |
+| `preserve_state=True` | Interruptible inference - saves and restores request state |
 
 ### API Usage (OpenAI-compatible server)
 
@@ -121,17 +141,20 @@ llm.wake_up()
 # Start server with sleep mode enabled
 vllm serve meta-llama/Llama-3.2-1B --enable-sleep-mode
 
-# Put to sleep via API
+# Option 1: Original sleep (default)
 curl -X POST http://localhost:8000/sleep?level=1
+
+# Option 2: Sleep with state preservation
+curl -X POST "http://localhost:8000/sleep?level=2&preserve_state=true"
 
 # Check status
 curl http://localhost:8000/is_sleeping
 # Returns: {"is_sleeping": true}
 
-# Wake up
+# Wake up (automatically restores if checkpoint exists)
 curl -X POST http://localhost:8000/wake_up
 
-# Requests continue processing
+# Requests continue processing (if preserve_state was true)
 ```
 
 ## Implementation Details

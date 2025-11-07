@@ -141,7 +141,7 @@ class EngineCoreClient(ABC):
     def reset_prefix_cache(self) -> None:
         raise NotImplementedError
 
-    def sleep(self, level: int = 1) -> None:
+    def sleep(self, level: int = 1, preserve_state: bool = False) -> None:
         raise NotImplementedError
 
     def wake_up(self, tags: list[str] | None = None) -> None:
@@ -211,7 +211,7 @@ class EngineCoreClient(ABC):
     async def reset_prefix_cache_async(self) -> None:
         raise NotImplementedError
 
-    async def sleep_async(self, level: int = 1) -> None:
+    async def sleep_async(self, level: int = 1, preserve_state: bool = False) -> None:
         raise NotImplementedError
 
     async def wake_up_async(self, tags: list[str] | None = None) -> None:
@@ -290,8 +290,8 @@ class InprocClient(EngineCoreClient):
     def reset_prefix_cache(self) -> None:
         self.engine_core.reset_prefix_cache()
 
-    def sleep(self, level: int = 1) -> None:
-        self.engine_core.sleep(level)
+    def sleep(self, level: int = 1, preserve_state: bool = False) -> None:
+        self.engine_core.sleep(level, preserve_state=preserve_state)
 
     def wake_up(self, tags: list[str] | None = None) -> None:
         self.engine_core.wake_up(tags)
@@ -766,8 +766,8 @@ class SyncMPClient(MPClient):
     def pin_lora(self, lora_id: int) -> bool:
         return self.call_utility("pin_lora", lora_id)
 
-    def sleep(self, level: int = 1) -> None:
-        self.call_utility("sleep", level)
+    def sleep(self, level: int = 1, preserve_state: bool = False) -> None:
+        self.call_utility("sleep", level, preserve_state)
 
     def wake_up(self, tags: list[str] | None = None) -> None:
         self.call_utility("wake_up", tags)
@@ -958,8 +958,8 @@ class AsyncMPClient(MPClient):
     async def reset_prefix_cache_async(self) -> None:
         await self.call_utility_async("reset_prefix_cache")
 
-    async def sleep_async(self, level: int = 1) -> None:
-        await self.call_utility_async("sleep", level)
+    async def sleep_async(self, level: int = 1, preserve_state: bool = False) -> None:
+        await self.call_utility_async("sleep", level, preserve_state)
 
     async def wake_up_async(self, tags: list[str] | None = None) -> None:
         await self.call_utility_async("wake_up", tags)

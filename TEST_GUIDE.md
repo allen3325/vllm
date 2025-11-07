@@ -75,11 +75,11 @@ outputs_before = llm.generate(prompts, sampling_params)
 for i, output in enumerate(outputs_before):
     print(f"  Prompt {i+1}: {output.outputs[0].text[:100]}...")
 
-# Test 2: Sleep and wake
-print("\n💤 Test 2: Entering sleep mode (level 2)...")
-llm.sleep(level=2)
+# Test 2: Sleep and wake WITH STATE PRESERVATION
+print("\n💤 Test 2: Entering sleep mode with state preservation...")
+llm.sleep(level=2, preserve_state=True)  # 🔑 preserve_state=True
 assert llm.is_sleeping(), "❌ Engine should be sleeping!"
-print("✅ Engine is sleeping")
+print("✅ Engine is sleeping with state preserved")
 
 time.sleep(2)  # Simulate idle time
 
@@ -107,6 +107,7 @@ for i in range(len(prompts)):
         print(f"     After:  {after[:50]}...")
 
 print("\n✨ All tests passed! Interruptible inference is working!")
+print("\n📝 Note: Set preserve_state=False (or omit it) to use original sleep behavior")
 ```
 
 Run it:
@@ -213,8 +214,8 @@ curl http://localhost:8000/v1/completions \
     "temperature": 0.0
   }' | jq -r '.choices[0].text' > before_sleep.txt
 
-# 3. Put server to sleep
-curl -X POST http://localhost:8000/sleep?level=2
+# 3. Put server to sleep WITH STATE PRESERVATION
+curl -X POST "http://localhost:8000/sleep?level=2&preserve_state=true"
 # Response: {"message":"Engine is now sleeping at level 2"}
 
 # 4. Check sleep status
@@ -242,6 +243,9 @@ curl http://localhost:8000/v1/completions \
 # 8. Compare outputs (should be identical)
 diff before_sleep.txt after_wake.txt
 # No output means files are identical ✅
+
+# Note: Omit preserve_state parameter for original sleep behavior
+# curl -X POST http://localhost:8000/sleep?level=2  # Original behavior
 ```
 
 ### Step 3: Test with Python Client
@@ -273,10 +277,10 @@ response_before = client.completions.create(
 text_before = response_before.choices[0].text
 print(f"Generated: {text_before[:100]}...")
 
-# Test 2: Sleep
-print("\n💤 Putting server to sleep...")
+# Test 2: Sleep WITH STATE PRESERVATION
+print("\n💤 Putting server to sleep with state preservation...")
 import requests
-requests.post("http://localhost:8000/sleep", params={"level": 2})
+requests.post("http://localhost:8000/sleep", params={"level": 2, "preserve_state": "true"})
 
 status = requests.get("http://localhost:8000/is_sleeping").json()
 print(f"Sleep status: {status}")
@@ -485,8 +489,8 @@ print("2. Generating (before sleep)...")
 out1 = llm.generate(["Hello"], SamplingParams(max_tokens=5, temperature=0.0))
 print(f"   Output: {out1[0].outputs[0].text}")
 
-print("3. Sleeping...")
-llm.sleep(level=2)
+print("3. Sleeping WITH state preservation...")
+llm.sleep(level=2, preserve_state=True)  # 🔑 Key parameter
 
 print("4. Waking...")
 llm.wake_up()
@@ -500,6 +504,9 @@ if out1[0].outputs[0].text == out2[0].outputs[0].text:
     print("   ✅ SUCCESS")
 else:
     print("   ❌ FAILED")
+
+# Note: To test original behavior, use:
+# llm.sleep(level=2)  # Without preserve_state parameter
 ```
 
 ---

@@ -674,9 +674,18 @@ class AsyncLLM(EngineClient):
             raise ValueError("Not supported on CPU.")
         await self.engine_core.reset_prefix_cache_async()
 
-    async def sleep(self, level: int = 1) -> None:
+    async def sleep(self, level: int = 1, preserve_state: bool = False) -> None:
+        """
+        Put the engine to sleep, optionally preserving request state.
+
+        Args:
+            level: Sleep level (1 = offload weights, 2 = offload weights + buffers)
+            preserve_state: If True, save request state for interruptible inference.
+                          Allows active requests to resume after wake_up().
+                          Default False for backward compatibility.
+        """
         await self.reset_prefix_cache()
-        await self.engine_core.sleep_async(level)
+        await self.engine_core.sleep_async(level, preserve_state=preserve_state)
 
         if self.logger_manager is not None:
             self.logger_manager.record_sleep_state(1, level)
