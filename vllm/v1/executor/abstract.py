@@ -300,12 +300,20 @@ class Executor(ABC):
     def stop_profile(self) -> None:
         self.collective_rpc("stop_profile")
 
-    def sleep(self, level: int = 1):
+    def sleep(self, level: int = 1, preserve_buffers: bool = True):
+        """
+        Put executor to sleep.
+
+        Args:
+            level: Sleep level (1 = offload weights, 2 = offload all)
+            preserve_buffers: If False, don't save model buffers for level 2.
+                            Set to False when sleeping without active requests.
+        """
         if self.is_sleeping:
             logger.warning("Executor is already sleeping.")
             return
         time_before_sleep = time.perf_counter()
-        self.collective_rpc("sleep", kwargs=dict(level=level))
+        self.collective_rpc("sleep", kwargs=dict(level=level, preserve_buffers=preserve_buffers))
         time_after_sleep = time.perf_counter()
         self.sleeping_tags = {"weights", "kv_cache"}
         self.is_sleeping = True

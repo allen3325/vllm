@@ -502,6 +502,8 @@ class EngineCore:
             preserve_state,
         )
 
+        preserve_buffers = False  # Default: don't preserve model buffers
+
         if preserve_state:
             # Check if there are any requests to preserve
             has_requests = (
@@ -531,18 +533,21 @@ class EngineCore:
                     "Saved checkpoint for interruptible inference (%d requests)",
                     len(scheduler_checkpoint["requests"]),
                 )
+                # Only preserve buffers if we have requests to restore
+                preserve_buffers = True
             else:
                 # No active requests - clear checkpoint to ensure clean wake_up
                 self.checkpoint_manager.clear_checkpoint()
                 logger.debug(
-                    "No active requests to preserve, skipping checkpoint"
+                    "No active requests to preserve, skipping checkpoint and buffer preservation"
                 )
         else:
             # Not preserving state - ensure no stale checkpoint
             self.checkpoint_manager.clear_checkpoint()
 
         # Offload GPU memory
-        self.model_executor.sleep(level)
+        # preserve_buffers=True only if we saved a checkpoint with requests
+        self.model_executor.sleep(level, preserve_buffers=preserve_buffers)
 
         logger.info("Successfully entered sleep mode")
 

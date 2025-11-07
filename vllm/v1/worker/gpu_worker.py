@@ -119,17 +119,30 @@ class Worker(WorkerBase):
         else:
             self.profiler = None
 
-    def sleep(self, level: int = 1) -> None:
+    def sleep(self, level: int = 1, preserve_buffers: bool = True) -> None:
+        """
+        Put worker to sleep.
+
+        Args:
+            level: Sleep level (1 = offload weights, 2 = offload all)
+            preserve_buffers: If False, don't save model buffers even for level 2.
+                            Used when sleeping without active requests.
+        """
         from vllm.device_allocator.cumem import CuMemAllocator
 
         free_bytes_before_sleep = torch.cuda.mem_get_info()[0]
 
-        # Save the buffers before level 2 sleep
-        if level == 2:
+        # Save the buffers before level 2 sleep only if preserve_buffers=True
+        if level == 2 and preserve_buffers:
             model = self.model_runner.model
             self._sleep_saved_buffers = {
                 name: buffer.cpu().clone() for name, buffer in model.named_buffers()
             }
+            logger.debug("Saved %d model buffers for level 2 sleep", len(self._sleep_saved_buffers))
+        elif level == 2:
+            # Level 2 without buffer preservation - clear any existing saved buffers
+            self._sleep_saved_buffers = {}
+            logger.debug("Level 2 sleep without buffer preservation")
 
         allocator = CuMemAllocator.get_instance()
         allocator.sleep(offload_tags=("weights",) if level == 1 else tuple())
