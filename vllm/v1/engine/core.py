@@ -532,9 +532,14 @@ class EngineCore:
                     len(scheduler_checkpoint["requests"]),
                 )
             else:
+                # No active requests - clear checkpoint to ensure clean wake_up
+                self.checkpoint_manager.clear_checkpoint()
                 logger.debug(
                     "No active requests to preserve, skipping checkpoint"
                 )
+        else:
+            # Not preserving state - ensure no stale checkpoint
+            self.checkpoint_manager.clear_checkpoint()
 
         # Offload GPU memory
         self.model_executor.sleep(level)
@@ -582,7 +587,10 @@ class EngineCore:
                 # Clear checkpoint after successful restoration
                 self.checkpoint_manager.clear_checkpoint()
         else:
-            logger.debug("No checkpoint to restore (original sleep behavior)")
+            # No checkpoint to restore - reset prefix cache to clear any stale state
+            # This is critical to prevent corruption from old KV cache data
+            logger.debug("No checkpoint to restore, resetting prefix cache")
+            self.scheduler.reset_prefix_cache()
 
         logger.info("Successfully woke up from sleep mode")
 
