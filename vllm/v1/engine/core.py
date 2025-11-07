@@ -214,6 +214,10 @@ class EngineCore:
             self.step if self.batch_queue is None else self.step_with_batch_queue
         )
 
+        # Initialize checkpoint manager for interruptible inference
+        from vllm.v1.engine.checkpoint import CheckpointManager
+        self.checkpoint_manager = CheckpointManager()
+
     def _initialize_kv_caches(
         self, vllm_config: VllmConfig
     ) -> tuple[int, int, KVCacheConfig]:
@@ -328,6 +332,10 @@ class EngineCore:
         Returns tuple of outputs and a flag indicating whether the model
         was executed.
         """
+
+        # Skip execution if engine is sleeping
+        if self.is_sleeping():
+            return {}, False
 
         # Check for any requests remaining in the scheduler - unfinished,
         # or finished and not yet removed from the batch.
@@ -479,10 +487,74 @@ class EngineCore:
         self.scheduler.reset_prefix_cache()
 
     def sleep(self, level: int = 1):
+        """
+        Put the engine to sleep, saving state for resumption.
+
+        Args:
+            level: Sleep level (1 = offload weights, 2 = offload weights + save buffers)
+        """
+        logger.info("Entering sleep mode (level %d)", level)
+
+        # Step 1: Prepare scheduler by preempting all running requests
+        self.scheduler.prepare_for_sleep()
+
+        # Step 2: Export scheduler state for checkpointing
+        scheduler_checkpoint = self.scheduler.get_checkpoint_state()
+
+        # Step 3: Save checkpoint
+        from vllm.v1.engine.checkpoint import SchedulerCheckpoint
+        checkpoint = SchedulerCheckpoint(
+            requests=scheduler_checkpoint["requests"],
+            waiting_queue_data=scheduler_checkpoint["waiting_queue_data"],
+            running_request_ids=scheduler_checkpoint["running_request_ids"],
+            kv_block_allocations=scheduler_checkpoint["kv_block_allocations"],
+            prefix_cache_state=scheduler_checkpoint["prefix_cache_state"],
+        )
+        self.checkpoint_manager.save_checkpoint(checkpoint)
+
+        # Step 4: Offload GPU memory
         self.model_executor.sleep(level)
 
+        logger.info("Successfully entered sleep mode")
+
     def wake_up(self, tags: list[str] | None = None):
+        """
+        Wake up the engine and restore saved state.
+
+        Args:
+            tags: Optional list of memory pool tags to restore
+        """
+        logger.info("Waking up from sleep mode")
+
+        # Step 1: Restore GPU memory
         self.model_executor.wake_up(tags)
+
+        # Step 2: Restore checkpoint if available
+        checkpoint = self.checkpoint_manager.restore_checkpoint()
+        if checkpoint is not None:
+            scheduler_checkpoint = {
+                "requests": checkpoint.scheduler_checkpoint.requests,
+                "waiting_queue_data": checkpoint.scheduler_checkpoint.waiting_queue_data,
+                "running_request_ids": checkpoint.scheduler_checkpoint.running_request_ids,
+                "kv_block_allocations": checkpoint.scheduler_checkpoint.kv_block_allocations,
+                "prefix_cache_state": checkpoint.scheduler_checkpoint.prefix_cache_state,
+            }
+            self.scheduler.restore_checkpoint_state(scheduler_checkpoint)
+
+            # Step 3: Re-establish block hashers for restored requests
+            if self.request_block_hasher is not None:
+                from functools import partial
+                for request in self.scheduler.requests.values():
+                    if request.get_hash_new_full_blocks is None:
+                        request.get_hash_new_full_blocks = partial(
+                            self.request_block_hasher, request
+                        )
+
+            logger.info("Successfully restored checkpoint from sleep")
+        else:
+            logger.warning("No checkpoint available to restore")
+
+        logger.info("Successfully woke up from sleep mode")
 
     def is_sleeping(self) -> bool:
         return self.model_executor.is_sleeping

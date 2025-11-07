@@ -186,6 +186,35 @@ class KVCacheCoordinator(ABC):
             for manager in self.single_type_managers
         )
 
+    def get_all_request_ids(self) -> list[str]:
+        """
+        Get all request IDs that have allocated blocks.
+        """
+        request_ids = set()
+        for manager in self.single_type_managers:
+            request_ids.update(manager.req_to_blocks.keys())
+        return list(request_ids)
+
+    def export_prefix_cache(self) -> dict:
+        """
+        Export prefix cache state for checkpointing.
+
+        Returns:
+            Dictionary containing prefix cache mappings.
+        """
+        # Default implementation for coordinators without prefix caching
+        return {}
+
+    def restore_prefix_cache(self, state: dict) -> None:
+        """
+        Restore prefix cache state from checkpoint.
+
+        Args:
+            state: Dictionary containing prefix cache mappings.
+        """
+        # Default implementation for coordinators without prefix caching
+        pass
+
     @abstractmethod
     def find_longest_cache_hit(
         self,
