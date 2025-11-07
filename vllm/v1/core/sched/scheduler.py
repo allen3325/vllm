@@ -1560,7 +1560,7 @@ class Scheduler(SchedulerInterface):
                 request.status = RequestStatus.PREEMPTED
                 request.num_preemptions += 1
                 # Move back to waiting queue
-                self.waiting.append_request(request)
+                self.waiting.add_request(request)
 
         # Clear running list
         self.running.clear()
@@ -1646,7 +1646,7 @@ class Scheduler(SchedulerInterface):
         for req_id, priority, arrival_time in checkpoint["waiting_queue_data"]:
             if req_id in self.requests:
                 request = self.requests[req_id]
-                self.waiting.append_request(request)
+                self.waiting.add_request(request)
 
         # Restore running requests (should typically be empty after sleep)
         for req_id in checkpoint["running_request_ids"]:
