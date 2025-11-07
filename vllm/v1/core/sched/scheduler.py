@@ -1634,6 +1634,7 @@ class Scheduler(SchedulerInterface):
         self.waiting.clear()
         self.running.clear()
         self.finished_req_ids.clear()
+        self.prev_step_scheduled_req_ids.clear()
 
         # Restore all requests
         for req_id, serialized_req in checkpoint["requests"].items():
