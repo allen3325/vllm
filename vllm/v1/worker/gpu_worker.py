@@ -132,14 +132,14 @@ class Worker(WorkerBase):
 
         free_bytes_before_sleep = torch.cuda.mem_get_info()[0]
 
-        # Clear model runner request cache when preserving state via checkpoint.
-        # This ensures that when we restore from checkpoint, requests are treated
-        # as new and don't have stale cached state from before sleep.
+        # Clear model runner input batch when preserving state via checkpoint.
+        # This ensures that when we restore from checkpoint, resumed requests
+        # have req_index=None (not in persistent batch) as expected.
         if preserve_buffers:
-            logger.debug("Clearing model runner request cache for checkpoint-based sleep")
-            self.model_runner.requests.clear()
-            # Note: input_batch will be cleared naturally as unscheduled requests
-            # are removed when scheduler preempts all running requests
+            logger.debug("Clearing model runner input batch for checkpoint-based sleep")
+            self.model_runner.input_batch.req_id_to_index.clear()
+            # Also clear the request ID list
+            self.model_runner.input_batch._req_ids.clear()
 
         # Save the buffers before level 2 sleep only if preserve_buffers=True
         if level == 2 and preserve_buffers:
