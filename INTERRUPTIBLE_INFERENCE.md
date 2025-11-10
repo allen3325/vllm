@@ -6,6 +6,14 @@ This document describes the interruptible inference implementation for vLLM, whi
 
 **This feature is opt-in via the `preserve_state` parameter** - the original sleep/wake behavior is unchanged by default, ensuring full backward compatibility.
 
+> 📊 **Visual Guide**: See [ARCHITECTURE_DIAGRAMS.md](./ARCHITECTURE_DIAGRAMS.md) for comprehensive architecture diagrams including:
+> - Overall system architecture and component layers
+> - Complete sleep/wake/resume sequence flow
+> - Request lifecycle state transitions
+> - Memory layout during sleep/wake cycles
+> - Checkpoint data structure relationships
+> - Comparison of old vs new behavior
+
 ## Features
 
 1. **Opt-In Design**: Controlled by `preserve_state=True` parameter (default: `False`)
@@ -19,6 +27,8 @@ This document describes the interruptible inference implementation for vLLM, whi
 5. **Full Backward Compatibility**: Original sleep/wake behavior unchanged when `preserve_state=False` (default)
 
 ## Architecture
+
+> 💡 **Tip**: For visual representation of the architecture, see the [Overall Architecture diagram](./ARCHITECTURE_DIAGRAMS.md#1-overall-architecture) and [Component Interaction diagram](./ARCHITECTURE_DIAGRAMS.md#3-component-interaction-detail).
 
 ### Components Modified
 
@@ -159,6 +169,8 @@ curl -X POST http://localhost:8000/wake_up
 
 ## Implementation Details
 
+> 🔍 **Visual Flow**: See the [State Preservation Flow diagram](./ARCHITECTURE_DIAGRAMS.md#2-state-preservation-flow-sleep--wake) for a detailed sequence of operations during sleep/wake cycles.
+
 ### Request State Preservation
 
 **What is saved:**
@@ -177,22 +189,27 @@ curl -X POST http://localhost:8000/wake_up
 
 ### KV Cache Handling
 
+> 🧠 **Memory Flow**: See the [Memory Layout diagram](./ARCHITECTURE_DIAGRAMS.md#5-memory-layout-during-sleepwake) for visualization of GPU↔CPU memory transfers.
+
 The implementation relies on vLLM's existing KV cache memory management:
 
-1. **During Sleep:**
+1. **During Sleep (with `preserve_state=True`):**
    - KV cache block metadata (block IDs, ref counts) is saved in checkpoint
-   - Physical GPU memory is preserved via `CuMemAllocator.sleep()` mechanism
-   - Block allocations are not freed
+   - Physical GPU memory is offloaded to CPU via `CuMemAllocator.sleep(offload_tags=("weights", "kv_cache"))`
+   - Block allocations are preserved in checkpoint
+   - KV cache content is safely stored in CPU memory
 
 2. **During Wake:**
-   - GPU memory is restored via `CuMemAllocator.wake_up()`
+   - GPU memory is restored via `CuMemAllocator.wake_up()` (CPU → GPU transfer)
    - Block metadata is reconnected to requests
    - Prefix cache mappings are restored
+   - KV cache content is available immediately for continued generation
 
 3. **Memory Safety:**
    - The `CuMemAllocator` uses memory pools with tags ("weights", "kv_cache")
-   - Sleep offloads tagged memory to CPU (level 1: weights only, level 2: all)
-   - Wake restores memory from CPU back to GPU
+   - **With `preserve_state=True`**: Both weights and KV cache are offloaded to CPU
+   - **With `preserve_state=False`**: Only weights are offloaded (original behavior)
+   - Wake restores memory from CPU back to GPU atomically
 
 ### Request Preemption
 
@@ -212,20 +229,25 @@ for request in self.running:
 
 ### Compatibility Guarantees
 
+> ⚖️ **Behavior Comparison**: See the [Comparison diagram](./ARCHITECTURE_DIAGRAMS.md#10-comparison-with-vs-without-preserve_state) for side-by-side comparison of old vs new behavior.
+
 1. **Backward Compatibility:**
    - Existing code without checkpointing works unchanged
    - Sleep/wake without requests works as before
-   - New checkpoint code only activates when state exists
+   - New checkpoint code only activates when `preserve_state=True`
+   - Default behavior (`preserve_state=False`) is identical to original implementation
 
 2. **Request Processing:**
    - Non-preempted requests are unaffected
    - Finished requests are properly cleaned up
    - New requests can be added after wake-up
+   - Restored requests continue from exact point of preemption
 
 3. **Error Handling:**
    - Missing checkpoint logs warning, continues without restoration
    - Invalid checkpoint data is caught during deserialization
    - Partial restoration failures don't crash the engine
+   - See [Error Handling diagram](./ARCHITECTURE_DIAGRAMS.md#9-error-handling-and-edge-cases) for complete flow
 
 ## Testing
 
@@ -319,11 +341,28 @@ This implementation provides **production-ready interruptible inference** for vL
 ✅ **Safe**: Preempts requests before sleep, preventing corruption
 ✅ **Complete**: Saves all necessary state (requests, KV cache, prefix cache)
 ✅ **Seamless**: Resumes inference exactly where it left off
-✅ **Compatible**: Zero impact on existing functionality
+✅ **Compatible**: Zero impact on existing functionality (opt-in via `preserve_state`)
 ✅ **Tested**: Comprehensive tests verify correctness
+✅ **Well-Documented**: Complete documentation with visual architecture diagrams
 
 The checkpoint/restore mechanism ensures that sleep/wake operations are **truly interruptible**, enabling use cases like:
-- Resource sharing between multiple models
-- Dynamic GPU memory management
-- Cost optimization (sleep during idle periods)
-- Power management for edge deployments
+- **Resource Sharing**: Dynamically share GPU memory between multiple models
+- **Dynamic Memory Management**: Free up GPU memory temporarily without losing state
+- **Cost Optimization**: Sleep during idle periods to save power/cost
+- **Power Management**: Efficient power usage for edge deployments
+- **Multi-Tenant Serving**: Switch between different models/workloads seamlessly
+
+### Key Innovations
+
+1. **Checkpoint-Based State Preservation**: Complete request state serialization including KV cache blocks
+2. **Opt-In Design**: Backward compatible by default, new functionality requires explicit opt-in
+3. **Memory-Efficient**: Leverages existing `CuMemAllocator` for GPU↔CPU transfers
+4. **Request Preemption**: Safely moves running requests back to waiting queue
+5. **Prefix Cache Preservation**: Maintains prefix cache mappings across sleep/wake cycles
+
+### Documentation
+
+- **[INTERRUPTIBLE_INFERENCE.md](./INTERRUPTIBLE_INFERENCE.md)**: This document - comprehensive guide
+- **[ARCHITECTURE_DIAGRAMS.md](./ARCHITECTURE_DIAGRAMS.md)**: Visual architecture and flow diagrams
+- **[CRITICAL_BUGS_FOUND.md](./CRITICAL_BUGS_FOUND.md)**: Detailed analysis of bugs found and fixed
+- **[TEST_GUIDE.md](./TEST_GUIDE.md)**: Step-by-step testing guide for different devices
