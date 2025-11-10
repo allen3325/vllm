@@ -1541,3 +1541,147 @@ class Scheduler(SchedulerInterface):
         # Return the IDs of affected running requests to skip in
         # update_from_output.
         return sync_affected_req_ids
+
+    def prepare_for_sleep(self) -> None:
+        """
+        Prepare scheduler for sleep mode by preempting all running requests.
+
+        This safely moves all running requests back to the waiting queue,
+        ensuring they can be resumed when the engine wakes up.
+        """
+        logger.info(
+            "Preparing scheduler for sleep: preempting %d running requests",
+            len(self.running),
+        )
+
+        # Preempt all running requests
+        for request in self.running:
+            if not request.is_finished():
+                request.status = RequestStatus.PREEMPTED
+                request.num_preemptions += 1
+                # Move back to waiting queue
+                self.waiting.add_request(request)
+
+        # Clear running list
+        self.running.clear()
+
+        logger.info(
+            "Scheduler prepared for sleep: %d requests in waiting queue",
+            len(self.waiting),
+        )
+
+    def get_checkpoint_state(self) -> dict[str, Any]:
+        """
+        Export scheduler state for checkpointing.
+
+        Returns:
+            Dictionary containing all necessary state to restore the scheduler.
+        """
+        from vllm.v1.engine.checkpoint import serialize_request
+
+        # Serialize all requests
+        serialized_requests = {
+            req_id: serialize_request(req)
+            for req_id, req in self.requests.items()
+        }
+
+        # Collect waiting queue data (request_id, priority, arrival_time)
+        waiting_queue_data = [
+            (req.request_id, req.priority, req.arrival_time)
+            for req in self.waiting
+        ]
+
+        # Collect running request IDs (should be empty after prepare_for_sleep)
+        running_request_ids = [req.request_id for req in self.running]
+
+        # Export KV cache block allocations
+        kv_block_allocations = self.kv_cache_manager.get_block_allocations()
+
+        # Export prefix cache state if enabled
+        prefix_cache_state = None
+        if self.cache_config.enable_prefix_caching:
+            prefix_cache_state = self.kv_cache_manager.export_prefix_cache()
+
+        checkpoint = {
+            "requests": serialized_requests,
+            "waiting_queue_data": waiting_queue_data,
+            "running_request_ids": running_request_ids,
+            "kv_block_allocations": kv_block_allocations,
+            "prefix_cache_state": prefix_cache_state,
+        }
+
+        logger.info(
+            "Exported scheduler checkpoint: %d requests, %d waiting",
+            len(serialized_requests),
+            len(waiting_queue_data),
+        )
+
+        return checkpoint
+
+    def restore_checkpoint_state(self, checkpoint: dict[str, Any]) -> None:
+        """
+        Restore scheduler state from a checkpoint.
+
+        Args:
+            checkpoint: Dictionary containing the scheduler state to restore.
+        """
+        from vllm.v1.engine.checkpoint import deserialize_request
+
+        logger.info("Restoring scheduler state from checkpoint")
+
+        # Clear current state
+        self.requests.clear()
+        self.waiting.clear()
+        self.running.clear()
+        self.finished_req_ids.clear()
+        self.prev_step_scheduled_req_ids.clear()
+
+        # Clear optional state (for multi-engine, KV connector, etc.)
+        if self.finished_req_ids_dict is not None:
+            self.finished_req_ids_dict.clear()
+
+        self.finished_recving_kv_req_ids.clear()
+        self.failed_recving_kv_req_ids.clear()
+
+        # Clear encoder cache for multimodal requests
+        # Note: Encoder outputs are not preserved across sleep/wake cycles
+        # Multimodal requests will need to re-encode their inputs
+        # TODO: Consider saving/restoring encoder cache for efficiency
+        # self.encoder_cache_manager.clear()  # If this method exists
+
+        # Restore all requests
+        for req_id, serialized_req in checkpoint["requests"].items():
+            request = deserialize_request(serialized_req)
+            # Note: Block hasher will be re-established by EngineCore
+            # when requests are processed after wake_up
+            self.requests[req_id] = request
+
+        # Restore waiting queue (maintain priority order)
+        for req_id, priority, arrival_time in checkpoint["waiting_queue_data"]:
+            if req_id in self.requests:
+                request = self.requests[req_id]
+                self.waiting.add_request(request)
+
+        # Restore running requests (should typically be empty after sleep)
+        for req_id in checkpoint["running_request_ids"]:
+            if req_id in self.requests:
+                self.running.append(self.requests[req_id])
+
+        # Restore KV cache block allocations
+        if checkpoint["kv_block_allocations"]:
+            self.kv_cache_manager.restore_block_allocations(
+                checkpoint["kv_block_allocations"]
+            )
+
+        # Restore prefix cache state if available
+        if checkpoint["prefix_cache_state"] is not None:
+            self.kv_cache_manager.restore_prefix_cache(
+                checkpoint["prefix_cache_state"]
+            )
+
+        logger.info(
+            "Restored scheduler checkpoint: %d requests, %d waiting, %d running",
+            len(self.requests),
+            len(self.waiting),
+            len(self.running),
+        )

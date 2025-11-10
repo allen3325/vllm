@@ -1499,7 +1499,7 @@ class LLM:
     def reset_prefix_cache(self, device: Device | None = None) -> None:
         self.llm_engine.reset_prefix_cache(device)
 
-    def sleep(self, level: int = 1):
+    def sleep(self, level: int = 1, preserve_state: bool = False):
         """
         Put the engine to sleep. The engine should not process any requests.
         The caller should guarantee that no requests are being processed
@@ -1518,8 +1518,9 @@ class LLM:
                 different model or update the model, where previous model
                 weights are not needed. It reduces CPU memory pressure.
         """
-        self.reset_prefix_cache()
-        self.llm_engine.sleep(level=level)
+        if not preserve_state:
+            self.reset_prefix_cache()
+        self.llm_engine.sleep(level=level, preserve_state=preserve_state)
 
     def wake_up(self, tags: list[str] | None = None):
         """
