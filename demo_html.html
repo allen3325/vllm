@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 聊天介面</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .chat-container {
+            width: 100%;
+            max-width: 800px;
+            height: 90vh;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-header h1 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #4ade80;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.sleeping {
+            background: #fbbf24;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .control-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            backdrop-filter: blur(10px);
+        }
+
+        .control-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .control-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .sleep-btn {
+            background: rgba(251, 191, 36, 0.3);
+        }
+
+        .wake-btn {
+            background: rgba(74, 222, 128, 0.3);
+        }
+
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: #f8f9fa;
+        }
+
+        .message {
+            margin-bottom: 16px;
+            display: flex;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            justify-content: flex-end;
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            word-wrap: break-word;
+            line-height: 1.5;
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.assistant .message-content {
+            background: white;
+            color: #333;
+            border: 1px solid #e5e7eb;
+            border-bottom-left-radius: 4px;
+        }
+
+        .typing-indicator {
+            display: none;
+            padding: 12px 16px;
+            background: white;
+            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+            max-width: 70%;
+        }
+
+        .typing-indicator.active {
+            display: block;
+        }
+
+        .typing-indicator span {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #9ca3af;
+            border-radius: 50%;
+            margin: 0 2px;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-indicator span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-indicator span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+        }
+
+        .input-container {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            gap: 10px;
+        }
+
+        .message-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #e5e7eb;
+            border-radius: 25px;
+            font-size: 15px;
+            outline: none;
+            transition: border-color 0.3s ease;
+        }
+
+        .message-input:focus {
+            border-color: #667eea;
+        }
+
+        .send-btn {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .send-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .send-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .messages-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .messages-container::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        .messages-container::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 4px;
+        }
+
+        .messages-container::-webkit-scrollbar-thumb:hover {
+            background: #764ba2;
+        }
+
+        .error-message {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 10px 20px;
+            border-left: 4px solid #dc2626;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <div>
+                <div>
+                    <h1>AI 聊天助手</h1>
+                    <div class="status-indicator">
+                        <div class="status-dot" id="statusDot"></div>
+                        <div>
+                            <div id="statusText">初始化中...</div>
+                            <div id="modelName" style="font-size: 12px; opacity: 0.8; margin-top: 2px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="control-buttons">
+                <button class="control-btn sleep-btn" id="sleepBtn">
+                    😴 暫停
+                </button>
+                <button class="control-btn wake-btn" id="wakeBtn" disabled>
+                    ⚡ 恢復
+                </button>
+            </div>
+        </div>
+
+        <div class="messages-container" id="messagesContainer">
+            <div class="message assistant">
+                <div class="message-content">
+                    你好！我是 AI 助手。有什麼我可以幫助你的嗎？
+                </div>
+            </div>
+        </div>
+
+        <div class="typing-indicator" id="typingIndicator">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+
+        <div class="input-container">
+            <input 
+                type="text" 
+                class="message-input" 
+                id="messageInput" 
+                placeholder="輸入訊息..."
+                autocomplete="off"
+            >
+            <button class="send-btn" id="sendBtn">發送</button>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:8000';
+
+        class ChatApp {
+            constructor() {
+                this.messagesContainer = document.getElementById('messagesContainer');
+                this.messageInput = document.getElementById('messageInput');
+                this.sendBtn = document.getElementById('sendBtn');
+                this.sleepBtn = document.getElementById('sleepBtn');
+                this.wakeBtn = document.getElementById('wakeBtn');
+                this.typingIndicator = document.getElementById('typingIndicator');
+                this.statusDot = document.getElementById('statusDot');
+                this.statusText = document.getElementById('statusText');
+                this.modelNameEl = document.getElementById('modelName');
+                
+                this.isSleeping = false;
+                this.isStreaming = false;
+                this.modelName = null;
+                this.chatHistory = []; // 儲存對話歷史
+                
+                this.init();
+            }
+
+            async init() {
+                this.sendBtn.addEventListener('click', () => this.sendMessage());
+                this.messageInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        this.sendMessage();
+                    }
+                });
+                
+                this.sleepBtn.addEventListener('click', () => this.sleep());
+                this.wakeBtn.addEventListener('click', () => this.wakeUp());
+
+                // 初始化：檢查健康狀態和獲取模型
+                await this.checkHealth();
+                await this.fetchModel();
+            }
+
+            async checkHealth() {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/health`);
+                    if (response.ok) {
+                        this.updateStatus('ready');
+                    } else {
+                        this.updateStatus('error');
+                        this.showError('健康檢查失敗');
+                    }
+                } catch (error) {
+                    console.error('Health check error:', error);
+                    this.updateStatus('error');
+                    this.showError(`無法連接到服務: ${error.message}`);
+                }
+            }
+
+            async fetchModel() {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/v1/models`);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    if (data.data && data.data.length > 0) {
+                        this.modelName = data.data[0].id;
+                        this.modelNameEl.textContent = `模型: ${this.modelName}`;
+                    } else {
+                        throw new Error('沒有可用的模型');
+                    }
+                } catch (error) {
+                    console.error('Fetch model error:', error);
+                    this.showError(`無法獲取模型: ${error.message}`);
+                    this.modelNameEl.textContent = '模型: 未知';
+                }
+            }
+
+            addMessage(content, isUser = false) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${isUser ? 'user' : 'assistant'}`;
+                
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'message-content';
+                contentDiv.textContent = content;
+                
+                messageDiv.appendChild(contentDiv);
+                this.messagesContainer.appendChild(messageDiv);
+                this.scrollToBottom();
+                
+                return contentDiv;
+            }
+
+            showError(message) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error-message';
+                errorDiv.textContent = `錯誤: ${message}`;
+                this.messagesContainer.appendChild(errorDiv);
+                this.scrollToBottom();
+            }
+
+            scrollToBottom() {
+                this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+            }
+
+            setLoading(loading) {
+                this.isStreaming = loading;
+                this.sendBtn.disabled = loading;
+                this.messageInput.disabled = loading;
+                
+                if (loading) {
+                    this.typingIndicator.classList.add('active');
+                } else {
+                    this.typingIndicator.classList.remove('active');
+                }
+            }
+
+            updateStatus(status) {
+                switch(status) {
+                    case 'ready':
+                        this.statusDot.classList.remove('sleeping');
+                        this.statusDot.style.background = '#4ade80';
+                        this.statusText.textContent = '就緒';
+                        break;
+                    case 'sleeping':
+                        this.statusDot.classList.add('sleeping');
+                        this.statusText.textContent = '已暫停';
+                        break;
+                    case 'streaming':
+                        this.statusDot.classList.remove('sleeping');
+                        this.statusDot.style.background = '#4ade80';
+                        this.statusText.textContent = '回應中...';
+                        break;
+                    case 'error':
+                        this.statusDot.classList.remove('sleeping');
+                        this.statusDot.style.background = '#ef4444';
+                        this.statusText.textContent = '錯誤';
+                        break;
+                }
+            }
+
+            async sendMessage() {
+                const message = this.messageInput.value.trim();
+                if (!message || this.isStreaming || !this.modelName) return;
+
+                // 添加用戶訊息到歷史
+                this.chatHistory.push({
+                    role: 'user',
+                    content: message
+                });
+
+                // 添加用戶訊息到 UI
+                this.addMessage(message, true);
+                this.messageInput.value = '';
+
+                // 顯示載入狀態
+                this.setLoading(true);
+                this.updateStatus('streaming');
+
+                try {
+                    const response = await fetch(`${API_BASE_URL}/v1/chat/completions`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer None',
+                        },
+                        body: JSON.stringify({
+                            model: this.modelName,
+                            messages: this.chatHistory,
+                            temperature: 0.6,
+                            top_p: 0.95,
+                            top_k: 20,
+                            min_p: 0.0,
+                            max_tokens: 1500,
+                            stream: true
+
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    // 創建助手訊息容器
+                    const assistantMessageDiv = this.addMessage('', false);
+                    let fullResponse = '';
+
+                    // 讀取串流響應
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        const chunk = decoder.decode(value, { stream: true });
+                        const lines = chunk.split('\n');
+
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                const data = line.slice(6).trim();
+                                
+                                if (data === '[DONE]') {
+                                    break;
+                                }
+
+                                try {
+                                    const json = JSON.parse(data);
+                                    if (json.choices && json.choices[0].delta && json.choices[0].delta.content) {
+                                        fullResponse += json.choices[0].delta.content;
+                                        assistantMessageDiv.textContent = fullResponse;
+                                        this.scrollToBottom();
+                                    }
+                                } catch (e) {
+                                    // 忽略解析錯誤
+                                }
+                            }
+                        }
+                    }
+
+                    // 添加助手回應到歷史
+                    if (fullResponse) {
+                        this.chatHistory.push({
+                            role: 'assistant',
+                            content: fullResponse
+                        });
+                    }
+
+                } catch (error) {
+                    console.error('Error:', error);
+                    this.showError(error.message);
+                } finally {
+                    this.setLoading(false);
+                    this.updateStatus(this.isSleeping ? 'sleeping' : 'ready');
+                }
+            }
+
+            async sleep() {
+                if (this.isSleeping) return;
+
+                try {
+                    const response = await fetch(`${API_BASE_URL}/sleep?level=1&preserve_state=true`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer None',
+                        },
+                        body: JSON.stringify({})
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    this.isSleeping = true;
+                    this.sleepBtn.disabled = true;
+                    this.wakeBtn.disabled = false;
+                    this.updateStatus('sleeping');
+                    
+                    // 添加系統訊息
+                    const systemMsg = document.createElement('div');
+                    systemMsg.style.textAlign = 'center';
+                    systemMsg.style.color = '#6b7280';
+                    systemMsg.style.fontSize = '14px';
+                    systemMsg.style.margin = '10px 0';
+                    systemMsg.textContent = '💤 系統已暫停';
+                    this.messagesContainer.appendChild(systemMsg);
+                    this.scrollToBottom();
+
+                } catch (error) {
+                    console.error('Sleep error:', error);
+                    this.showError(`暫停失敗: ${error.message}`);
+                }
+            }
+
+            async wakeUp() {
+                if (!this.isSleeping) return;
+
+                try {
+                    const response = await fetch(`${API_BASE_URL}/wake_up`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer None',
+                        },
+                        body: ''
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    this.isSleeping = false;
+                    this.sleepBtn.disabled = false;
+                    this.wakeBtn.disabled = true;
+                    this.updateStatus('ready');
+                    
+                    // 添加系統訊息
+                    const systemMsg = document.createElement('div');
+                    systemMsg.style.textAlign = 'center';
+                    systemMsg.style.color = '#6b7280';
+                    systemMsg.style.fontSize = '14px';
+                    systemMsg.style.margin = '10px 0';
+                    systemMsg.textContent = '⚡ 系統已恢復';
+                    this.messagesContainer.appendChild(systemMsg);
+                    this.scrollToBottom();
+
+                } catch (error) {
+                    console.error('Wake up error:', error);
+                    this.showError(`恢復失敗: ${error.message}`);
+                }
+            }
+        }
+
+        // 初始化應用
+        const app = new ChatApp();
+    </script>
+</body>
+</html>
